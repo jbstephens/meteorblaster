@@ -24,6 +24,51 @@
   }
   #game { position: fixed; inset: 0; display: block; }
 
+  /* On-screen controls (iPad FamiCom-style D-pad + action button) — same
+     CSS pattern as Phaser Wars: chunky semi-transparent circular buttons
+     pinned to the safe-area corners, only shown on touch devices in-match. */
+  .controls {
+    position: fixed; top: 0; bottom: 0;
+    display: none; flex-direction: column;
+    justify-content: flex-end;
+    padding: max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    gap: 12px;
+    z-index: 5; pointer-events: none;
+  }
+  body.touch.in-match .controls { display: flex; }
+  body.paused .controls { display: none; }
+  .controls.left  { left: 0;  align-items: flex-start; }
+  .controls.right { right: 0; align-items: flex-end;   }
+  .row { display: flex; gap: 12px; pointer-events: auto; align-items: center; justify-content: center; }
+  .btn {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+    border: 3px solid rgba(255,255,255,0.35);
+    color: #fff; font-size: 26px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: auto;
+    transition: transform 0.06s, background 0.06s;
+    -webkit-user-select: none; user-select: none;
+    touch-action: none;
+  }
+  .btn.action {
+    width: 96px; height: 96px;
+    font-size: 14px; letter-spacing: 2px; font-weight: 900;
+    background: rgba(255,180,77,0.22);
+    border-color: rgba(255,180,77,0.7);
+    color: #ffe066;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+  }
+  .btn.action.empty { opacity: 0.35; }
+  .btn.held   { background: rgba(255,255,255,0.4); transform: scale(0.93); }
+  .btn.action.held { background: rgba(255,180,77,0.5); }
+
+  /* D-pad layout — column with three rows (up, left+right, down) so it
+     reads as a + shape, just like a NES/Famicom controller. */
+  .dpad { display: flex; flex-direction: column; gap: 8px; pointer-events: auto; align-items: center; }
+  .dpad .row { gap: 8px; }
+  .dpad .spacer { width: 64px; height: 64px; pointer-events: none; }
+
   /* Pause button — top-right, kid-finger friendly */
   .hud-btn {
     position: fixed;
@@ -49,34 +94,6 @@
   body.in-match .hud-btn { display: flex; }
   body.paused   .hud-btn { display: none; }
   .hud-btn:active { transform: scale(0.92); background: rgba(255,255,255,0.35); }
-
-  /* BOMB button — bottom-right, only on touch in-match */
-  .bomb-btn {
-    position: fixed;
-    bottom: max(20px, env(safe-area-inset-bottom));
-    right: max(20px, env(safe-area-inset-right));
-    width: 88px; height: 88px;
-    border-radius: 50%;
-    background: rgba(255,180,77,0.22);
-    border: 3px solid rgba(255,180,77,0.7);
-    color: #ffe066;
-    font-size: 13px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 6;
-    cursor: pointer;
-    padding: 0;
-    font-family: inherit;
-    touch-action: manipulation;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.6);
-  }
-  body.touch.in-match .bomb-btn { display: flex; }
-  body.paused .bomb-btn { display: none; }
-  .bomb-btn:active { transform: scale(0.92); background: rgba(255,180,77,0.45); }
-  .bomb-btn.empty { opacity: 0.35; }
 
   .overlay {
     position: fixed; inset: 0;
@@ -200,7 +217,25 @@
 <canvas id="game"></canvas>
 
 <button id="pauseBtn" class="hud-btn" aria-label="Pause">II</button>
-<button id="bombBtn" class="bomb-btn" aria-label="Bomb">BOMB</button>
+
+<!-- iPad on-screen controls — D-pad on the left, BOMB action on the right.
+     Same chunky NES/Famicom-style buttons used by the family fighting game. -->
+<div class="controls left">
+  <div class="dpad">
+    <div class="row"><div class="btn" data-act="up"    aria-label="Up">&#9650;</div></div>
+    <div class="row">
+      <div class="btn" data-act="left"  aria-label="Left">&#9664;</div>
+      <div class="spacer"></div>
+      <div class="btn" data-act="right" aria-label="Right">&#9654;</div>
+    </div>
+    <div class="row"><div class="btn" data-act="down"  aria-label="Down">&#9660;</div></div>
+  </div>
+</div>
+<div class="controls right">
+  <div class="row">
+    <div class="btn action" id="bombBtn" data-act="bomb" aria-label="Bomb">BOMB</div>
+  </div>
+</div>
 
 <!-- Title / pilot select -->
 <div id="titleOverlay" class="overlay">
@@ -722,6 +757,7 @@
 
   // ───── input ─────
   const keys = {};
+  const touchInput = { up:false, down:false, left:false, right:false };
   window.addEventListener('keydown', (e) => {
     if (state === MENU) return;
     keys[e.key.toLowerCase()] = true;
@@ -730,41 +766,78 @@
   });
   window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
-  // Touch: drag anywhere to position the ship (offset so finger doesn't cover it)
+  // D-pad + action buttons — same touchstart/end pattern as Phaser Wars
+  document.querySelectorAll('.btn').forEach(btn => {
+    const act = btn.dataset.act;
+    if (!act) return;
+    const set = (v) => {
+      if (act === 'bomb') {
+        // Action button is edge-triggered, not a held state
+        if (v && (state === PLAYING || state === WAVE_BANNER)) {
+          ensureAudio();
+          detonateBomb();
+        }
+        btn.classList.toggle('held', v);
+      } else {
+        touchInput[act] = v;
+        btn.classList.toggle('held', v);
+      }
+    };
+    const down = (e) => { e.preventDefault(); ensureAudio(); set(true); };
+    const up   = (e) => { e.preventDefault(); set(false); };
+    btn.addEventListener('touchstart',  down, { passive:false });
+    btn.addEventListener('touchend',    up,   { passive:false });
+    btn.addEventListener('touchcancel', up,   { passive:false });
+    btn.addEventListener('mousedown',   down);
+    btn.addEventListener('mouseup',     up);
+    btn.addEventListener('mouseleave',  () => set(false));
+  });
+
+  // Drag-anywhere on the canvas as a fallback — feels great on iPad but only
+  // engages when the player touches the play area (not while using the D-pad).
   let touchTarget = null;
+  let dragTouchId = null;
   function canvasToLogical(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const px = (clientX - rect.left) * (canvas.width / rect.width);
     const py = (clientY - rect.top)  * (canvas.height / rect.height);
     return { x: (px - offX) / scale, y: (py - offY) / scale };
   }
-  function onTouchStart(e) {
-    if (state !== PLAYING && state !== WAVE_BANNER && state !== BOSS) return;
-    if (e.touches.length === 0) return;
-    const t = e.touches[0];
-    // Only steer from touches in the lower 70% — keeps the BOMB button usable
+  function onCanvasTouchStart(e) {
+    if (state !== PLAYING && state !== WAVE_BANNER) return;
+    if (dragTouchId !== null) return;
+    const t = e.changedTouches[0];
+    dragTouchId = t.identifier;
     const p = canvasToLogical(t.clientX, t.clientY);
     touchTarget = { x: p.x, y: Math.max(60, p.y - 50) };
     e.preventDefault();
   }
-  function onTouchMove(e) {
-    if (!touchTarget || e.touches.length === 0) return;
-    const t = e.touches[0];
-    const p = canvasToLogical(t.clientX, t.clientY);
-    touchTarget.x = p.x;
-    touchTarget.y = Math.max(60, p.y - 50);
-    e.preventDefault();
+  function onCanvasTouchMove(e) {
+    if (dragTouchId === null) return;
+    for (const t of e.changedTouches) {
+      if (t.identifier === dragTouchId) {
+        const p = canvasToLogical(t.clientX, t.clientY);
+        touchTarget.x = p.x;
+        touchTarget.y = Math.max(60, p.y - 50);
+        e.preventDefault();
+        return;
+      }
+    }
   }
-  function onTouchEnd() { touchTarget = null; }
-  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-  canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
-  canvas.addEventListener('touchend',   onTouchEnd);
-  canvas.addEventListener('touchcancel',onTouchEnd);
+  function onCanvasTouchEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === dragTouchId) { dragTouchId = null; touchTarget = null; return; }
+    }
+  }
+  canvas.addEventListener('touchstart', onCanvasTouchStart, { passive: false });
+  canvas.addEventListener('touchmove',  onCanvasTouchMove,  { passive: false });
+  canvas.addEventListener('touchend',   onCanvasTouchEnd);
+  canvas.addEventListener('touchcancel',onCanvasTouchEnd);
 
   // Mouse drag on desktop (optional alternative to keyboard)
   let mouseDown = false;
   canvas.addEventListener('mousedown', (e) => {
-    if (state !== PLAYING && state !== WAVE_BANNER && state !== BOSS) return;
+    if (state !== PLAYING && state !== WAVE_BANNER) return;
     mouseDown = true;
     const p = canvasToLogical(e.clientX, e.clientY);
     touchTarget = { x: p.x, y: p.y };
@@ -865,10 +938,6 @@
     renderPilots();
   });
 
-  bombBtn.addEventListener('click', () => {
-    if (state === PLAYING || state === BOSS) detonateBomb();
-  });
-
   function showGameOver() {
     endTitle.textContent = 'GAME OVER';
     endSub.textContent = 'FINAL SCORE: ' + score;
@@ -915,7 +984,7 @@
     let tx = 0, ty = 0;
 
     if (touchTarget) {
-      // glide toward touch target
+      // glide toward drag target (canvas drag)
       const dx = touchTarget.x - player.x;
       const dy = touchTarget.y - player.y;
       const dist = Math.hypot(dx, dy);
@@ -926,14 +995,19 @@
       }
       player.vx = tx; player.vy = ty;
     } else {
-      if (keys['arrowleft']  || keys['a']) player.vx -= ACCEL;
-      if (keys['arrowright'] || keys['d']) player.vx += ACCEL;
-      if (keys['arrowup']    || keys['w']) player.vy -= ACCEL;
-      if (keys['arrowdown']  || keys['s']) player.vy += ACCEL;
+      // D-pad and keyboard share input — D-pad inputs map straight to keys
+      const left  = keys['arrowleft']  || keys['a'] || touchInput.left;
+      const right = keys['arrowright'] || keys['d'] || touchInput.right;
+      const up    = keys['arrowup']    || keys['w'] || touchInput.up;
+      const down  = keys['arrowdown']  || keys['s'] || touchInput.down;
+      if (left)  player.vx -= ACCEL;
+      if (right) player.vx += ACCEL;
+      if (up)    player.vy -= ACCEL;
+      if (down)  player.vy += ACCEL;
       player.vx = Math.max(-SPEED, Math.min(SPEED, player.vx));
       player.vy = Math.max(-SPEED, Math.min(SPEED, player.vy));
-      if (!keys['arrowleft']  && !keys['a'] && !keys['arrowright'] && !keys['d']) player.vx *= FRICTION;
-      if (!keys['arrowup']    && !keys['w'] && !keys['arrowdown']  && !keys['s']) player.vy *= FRICTION;
+      if (!left && !right) player.vx *= FRICTION;
+      if (!up   && !down)  player.vy *= FRICTION;
     }
 
     player.x += player.vx;
