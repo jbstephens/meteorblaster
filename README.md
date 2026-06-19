@@ -13,14 +13,16 @@ Ben, Luke, Mom, Dad — pick one. Each has their own ship colour, weapon colour,
 **Desktop**
 
 - `← → ↑ ↓` or `WASD` — fly
-- `Space` — drop a bomb (clears the screen, chips Zorg)
+- `Space` — fire (hold or mash; cooldown limits the rate)
+- `B` — drop a bomb (clears the screen, chips Zorg)
 - `P` or `Esc` — pause
-- Auto-fire — no need to mash a button
 
 **iPad / touch**
 
-- Drag anywhere — your ship glides toward your finger (with an offset so your finger doesn't cover it)
-- **BOMB** button (bottom-right) — drop a bomb
+- 4-way D-pad (bottom-left) — fly
+- **FIRE** button (bottom-right) — main weapon; mash it
+- **BOMB** button (sits next to FIRE) — drop a bomb
+- Drag anywhere on the canvas as an alternative to the D-pad
 - Pause button (top-right) — same as Phaser Wars
 
 ## Run of play
