@@ -71,7 +71,8 @@ Kills made within ~2 seconds of each other stack a combo. Every 3 hits raises th
 
 ## Extras
 
-- Three lives, two bombs to start
+- Three lives, **four bombs to start** — and you bank a **free bomb at the start of every wave** you finish
+- The **Mothership** drops a shield + bomb at half-HP, and a bomb + shield + life when it goes down
 - Persistent high score saved per pilot (localStorage)
 - Parallax starfield + drifting planets + background streaking comets
 - Random **METEOR SHOWER** set pieces
