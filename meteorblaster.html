@@ -111,6 +111,8 @@
   }
   body.in-match .hud-btn { display: flex; }
   body.paused   .hud-btn { display: none; }
+  /* Controller players pause with START — hide the touch pause button too */
+  body.input-pad .hud-btn { display: none; }
   .hud-btn:active { transform: scale(0.92); background: rgba(255,255,255,0.35); }
 
   .overlay {
@@ -1283,10 +1285,11 @@
   }
 
   // Held-state pad poll used by updatePlayer. Mirrors keyboard/touch on pad(0)
-  // (P1) and respects the analog stick deadzone.
+  // (P1), falling back to pad(1) if slot 0 is empty — same as pollMenuGamepad —
+  // and respects the analog stick deadzone.
   function padHeld(name) {
     if (!AC) return false;
-    const p = AC.pad(0);
+    const p = AC.pad(0).connected ? AC.pad(0) : AC.pad(1);
     if (!p || !p.connected) return false;
     if (p.button(name)) return true;
     if (name === 'left')  return p.axis('lx') < -0.35;
